@@ -29,9 +29,8 @@ jobs:
 
       - name: Compilar Setup (.exe instalador) + Portable (.exe)
         run: |
-          pwd
-          npm run
-          npm run dist:win
+          npm run build:electron
+          npx electron-builder --win nsis portable --x64
 
       - name: Listar resultado
         shell: pwsh
