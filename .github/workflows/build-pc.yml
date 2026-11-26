@@ -33,8 +33,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
 
       # Si subes un tag (ej. v1.2.0), el instalador usa esa versión.
       - name: Versión desde el tag
@@ -42,7 +40,7 @@ jobs:
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install
 
       - name: Compilar Setup (.exe instalador) + Portable (.exe)
         run: npm run dist:win
