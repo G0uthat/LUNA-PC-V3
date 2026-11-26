@@ -1,0 +1,105 @@
+{
+  "name": "luma-desktop",
+  "version": "1.0.0",
+  "description": "Luma Desktop — Biblioteca visual de lectura, lector multiformato y estudio de cuadernos para PC con interfaz estilo Notion y Canva.",
+  "author": "Luma",
+  "license": "MIT",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev:web": "vite --host 0.0.0.0 --port 3000",
+    "dev": "concurrently -k \"npm run dev:web\" \"wait-on http://localhost:3000 && electron .\"",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "build:web": "vite build",
+    "build": "npm run typecheck && npm run build:web",
+    "dist": "npm run typecheck && npm run build:electron && electron-builder --publish never",
+    "dist:win": "npm run typecheck && npm run build:electron && electron-builder --win --x64 --publish never",
+    "dist:win-portable": "npm run typecheck && npm run build:electron && electron-builder --win portable --x64 --publish never",
+    "dist:mac": "npm run typecheck && npm run build:electron && electron-builder --mac --publish never",
+    "dist:linux": "npm run typecheck && npm run build:electron && electron-builder --linux AppImage deb --publish never",
+    "build:electron": "vite build --mode electron"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.511.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.5.438",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "electron": "^35.2.0",
+    "electron-builder": "^26.0.12",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-pwa": "^2.0.0",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.lord67.luma.desktop",
+    "productName": "Luma",
+    "copyright": "Copyright © 2026 Luma",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build-resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Luma",
+      "artifactName": "Luma-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "Luma-${version}-mac.${ext}",
+      "icon": "build-resources/icon.png"
+    },
+    "linux": {
+      "category": "Education;Office",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "Luma-${version}-linux.${ext}",
+      "icon": "build-resources/icon.png"
+    },
+    "portable": {
+      "artifactName": "Luma-Portable-${version}.${ext}"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "luma-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm --prefix desktop run dev:web",
+    "build": "npm --prefix desktop run build",
+    "lint": "npm --prefix desktop run lint",
+    "start": "npm --prefix desktop run preview"
+  }
+}
