@@ -28,7 +28,10 @@ jobs:
         run: npm ci
 
       - name: Compilar Setup (.exe instalador) + Portable (.exe)
-        run: npm run dist:win
+        run: |
+          pwd
+          npm run
+          npm run dist:win
 
       - name: Listar resultado
         shell: pwsh
