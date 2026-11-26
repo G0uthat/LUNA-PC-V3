@@ -32,14 +32,26 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Detect output folder
+        id: detect_folder
+        run: |
+          if [ -d "dist" ]; then
+            echo "folder=./dist" >> $GITHUB_OUTPUT
+          elif [ -d "build" ]; then
+            echo "folder=./build" >> $GITHUB_OUTPUT
+          elif [ -d "out" ]; then
+            echo "folder=./out" >> $GITHUB_OUTPUT
+          else
+            echo "folder=." >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Cambia './dist' por './build' o '.' si tu proyecto no usa Vite
-          path: './dist'
+          path: ${{ steps.detect_folder.outputs.folder }}
 
   deploy:
     environment:
