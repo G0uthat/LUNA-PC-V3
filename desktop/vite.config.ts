@@ -7,8 +7,13 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => {
   // `vite build --mode electron` => build para el .exe (rutas relativas, sin PWA)
   const isElectron = mode === 'electron' || process.env.ELECTRON_BUILD === 'true';
+  // Ruta base web. En GitHub Pages el workflow define VITE_BASE_PATH=/NOMBRE-DEL-REPO/
+  // (respeta mayúsculas). En local queda '/'.
+  const rawBase = process.env.VITE_BASE_PATH?.trim() || '/';
+  const withLead = rawBase.startsWith('/') ? rawBase : `/${rawBase}`;
+  const webBase = withLead.endsWith('/') ? withLead : `${withLead}/`;
   return {
-  base: isElectron ? './' : '/',
+  base: isElectron ? './' : webBase,
   resolve: isElectron
     ? {
         alias: {
@@ -33,7 +38,7 @@ export default defineConfig(({ mode }) => {
               'pwa-maskable-512x512.png',
             ],
             manifest: {
-              id: '/',
+              id: webBase,
               name: 'Luma — Cuadernos y Lectura',
               short_name: 'Luma',
               description:
@@ -42,8 +47,8 @@ export default defineConfig(({ mode }) => {
               background_color: '#F7F3EA',
               display: 'standalone',
               orientation: 'any',
-              scope: '/',
-              start_url: '/',
+              scope: webBase,
+              start_url: webBase,
               lang: 'es',
               categories: ['productivity', 'education', 'books'],
               icons: [
