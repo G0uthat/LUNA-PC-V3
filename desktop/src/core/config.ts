@@ -32,23 +32,19 @@ export const LUMA_CORE_CONFIG = {
   /** Nombre por defecto de la carpeta raíz de Luma en Google Drive */
   defaultCloudFolderName: 'Luma',
   /**
-   * Client ID público de Google OAuth (tipo Aplicación Web / PKCE).
-   * Puede definirse vía variable de entorno Vite (`VITE_GOOGLE_CLIENT_ID`)
-   * o configurarse por el usuario en Ajustes → Fuentes.
+   * Client ID público de Google OAuth (tipo Aplicación Web).
+   * Se lee exclusivamente desde la variable de entorno Vite `VITE_GOOGLE_CLIENT_ID`.
    */
-  publicGoogleClientId:
-    (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-      ?.VITE_GOOGLE_CLIENT_ID?.trim() ?? '',
+  publicGoogleClientId: (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '').trim(),
   /** Enlace a formulario de comentarios de la Beta (editable en producción) */
   betaFeedbackFormUrl: 'https://forms.gle/luma-beta-feedback',
-  /** Textos oficiales de bienvenida y consentimiento en lenguaje simple */
+  /** Textos oficiales de bienvenida y cuenta en lenguaje simple */
   copy: {
     slogan: 'Tu biblioteca y cuadernos digitales, siempre contigo.',
     welcomeSubtitle: 'Sincroniza tus libros y cuadernos en todos tus dispositivos',
     offlineNote: 'Podrás iniciar sesión más tarde desde Mi cuenta',
-    consentTitle: 'Antes de continuar con Google',
-    consentBody:
-      'Luma va a ver, leer, guardar y modificar archivos en tu Google Drive dentro de la carpeta que elijas. No usamos servidores propios y nadie más ve tus archivos.',
+    googleDriveNote:
+      'Luma usa tu Google Drive para guardar y sincronizar tus archivos. No usamos servidores propios.',
     syncDisabledTooltip: 'Inicia sesión para sincronizar',
   },
 } as const;

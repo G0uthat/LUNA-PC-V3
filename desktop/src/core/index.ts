@@ -5,3 +5,4 @@ export * from './authStore';
 export { WelcomeScreen } from './components/WelcomeScreen';
 export { SyncStatusButton } from './components/SyncStatusButton';
 export { MyAccountView } from './components/MyAccountView';
+export { GoogleSignInAction } from './components/GoogleSignInAction';

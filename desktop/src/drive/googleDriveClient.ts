@@ -1,9 +1,7 @@
 import {
   DriveAuthState,
-  DriveCredentials,
   DriveFileCategory,
   DriveFileItem,
-  DriveScopeMode,
 } from './driveTypes';
 import {
   deleteCachedDriveFile,
@@ -11,15 +9,27 @@ import {
   listCachedDriveFileSummaries,
   putCachedDriveFile,
 } from './driveCache';
+import { LUMA_CORE_CONFIG } from '../core/config';
+import { loadGoogleGsiScript } from './googleGsiLoader';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
+export const GOOGLE_OAUTH_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.appdata',
+].join(' ');
+
+export const UNAVAILABLE_LOGIN_MESSAGE =
+  'El inicio de sesión no está disponible en este momento';
+
 // Strict in-memory token store (NEVER written to localStorage/sessionStorage!)
 let inMemoryAccessToken: string | null = null;
 let inMemoryTokenExpiresAt = 0;
-let inMemoryCreds: DriveCredentials | null = null;
 let inMemoryUser: { email?: string; name?: string; picture?: string } = {};
 let refreshTimerId: number | null = null;
 
@@ -47,7 +57,7 @@ export function getDriveAuthState(): DriveAuthState {
     name: valid ? inMemoryUser.name : undefined,
     picture: valid ? inMemoryUser.picture : undefined,
     expiresAt: valid ? inMemoryTokenExpiresAt : undefined,
-    scopeMode: inMemoryCreds?.scopeMode ?? 'drive',
+    scopeMode: 'drive.file',
   };
 }
 
@@ -84,12 +94,33 @@ export function extractDriveFolderId(rawInput: string): string | null {
  * Friendly Spanish Error Translator
  * ------------------------------------------------------------------------*/
 export function translateDriveError(err: unknown): string {
-  if (!navigator.onLine) {
-    return 'Sin conexión a internet. Luma guardará tus cambios localmente y sincronizará al volver la red.';
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return 'Sin conexión a internet. Revisa tu red e inténtalo de nuevo.';
   }
   const msg = err instanceof Error ? err.message : String(err ?? '');
   const lower = msg.toLowerCase();
 
+  if (
+    lower.includes('popup_failed_to_open') ||
+    lower.includes('popup blocked') ||
+    lower.includes('emergente')
+  ) {
+    return 'El navegador bloqueó la ventana emergente de Google. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.';
+  }
+  if (lower.includes('popup_closed') || lower.includes('cerraste la ventana')) {
+    return 'Cerraste la ventana de Google antes de completar el inicio de sesión. Inténtalo de nuevo cuando quieras.';
+  }
+  if (
+    lower.includes('org_internal') ||
+    lower.includes('unverified') ||
+    lower.includes('modo de pruebas') ||
+    lower.includes('no está autorizado')
+  ) {
+    return 'Tu correo no está autorizado para usar esta app en modo de pruebas. Pide al administrador que añada tu cuenta como usuario de prueba en Google Cloud.';
+  }
+  if (lower.includes('access_denied')) {
+    return 'No se pudo completar el acceso con Google. Si la app está en modo de pruebas, verifica que tu correo esté autorizado; si no, acepta los permisos solicitados.';
+  }
   if (lower.includes('401') || lower.includes('invalid credentials') || lower.includes('unauthenticated')) {
     return 'Tu sesión de Google Drive expiró. Pulsa «Iniciar sesión con Google» para renovarla.';
   }
@@ -97,7 +128,7 @@ export function translateDriveError(err: unknown): string {
     if (lower.includes('storagequotaexceeded') || lower.includes('quota')) {
       return 'Tu Google Drive no tiene espacio disponible o alcanzó el límite de cuota.';
     }
-    return 'Sin permisos suficientes para acceder a esa carpeta. Comprueba que tu cuenta tenga acceso o activa el alcance de lectura de carpetas.';
+    return 'Sin permisos suficientes para acceder a esa carpeta. Comprueba que tu cuenta tenga acceso.';
   }
   if (lower.includes('404') || lower.includes('not found')) {
     return 'La carpeta o archivo ya no existe en Google Drive o fue eliminado.';
@@ -105,11 +136,8 @@ export function translateDriveError(err: unknown): string {
   if (lower.includes('429') || lower.includes('rate limit')) {
     return 'Google Drive pidió esperar unos segundos por demasiadas solicitudes. Intenta de nuevo en un momento.';
   }
-  if (lower.includes('popup_closed') || lower.includes('access_denied')) {
-    return 'Inicio de sesión cancelado o permiso rechazado en Google.';
-  }
   if (lower.includes('failed to fetch') || lower.includes('network')) {
-    return 'No se pudo contactar con Google Drive. Revisa tu conexión a internet.';
+    return 'Sin conexión a internet o no se pudo contactar con Google. Revisa tu red e inténtalo de nuevo.';
   }
   return msg || 'Ocurrió un error al comunicarse con Google Drive.';
 }
@@ -117,15 +145,83 @@ export function translateDriveError(err: unknown): string {
 /* --------------------------------------------------------------------------
  * Google Identity Services (OAuth 2.0 Token Client — Zero Backend)
  * ------------------------------------------------------------------------*/
-function buildScopes(mode: DriveScopeMode): string {
-  const driveScope =
-    mode === 'drive.file'
-      ? 'https://www.googleapis.com/auth/drive.file'
-      : 'https://www.googleapis.com/auth/drive';
-  return `${driveScope} https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile`;
+function mapGisCallbackError(codeOrType: string, description?: string): Error {
+  const code = (codeOrType || '').toLowerCase();
+  const desc = (description || '').toLowerCase();
+  const combined = `${code} ${desc}`;
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return new Error('Sin conexión a internet. Revisa tu red e inténtalo de nuevo.');
+  }
+
+  if (
+    code === 'popup_failed_to_open' ||
+    combined.includes('popup_failed_to_open') ||
+    combined.includes('failed to open') ||
+    combined.includes('popup blocked')
+  ) {
+    return new Error(
+      'El navegador bloqueó la ventana emergente de Google. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.'
+    );
+  }
+
+  if (
+    code === 'popup_closed' ||
+    code === 'popup_closed_by_user' ||
+    combined.includes('popup_closed') ||
+    combined.includes('closed the popup')
+  ) {
+    return new Error(
+      'Cerraste la ventana de Google antes de completar el inicio de sesión. Inténtalo de nuevo cuando quieras.'
+    );
+  }
+
+  if (
+    code === 'org_internal' ||
+    code === 'unverified_app' ||
+    code === 'restricted_client' ||
+    combined.includes('test') ||
+    combined.includes('developer') ||
+    combined.includes('not allowed') ||
+    combined.includes('403')
+  ) {
+    return new Error(
+      'Tu correo no está autorizado para usar esta app en modo de pruebas. Pide al administrador que añada tu cuenta como usuario de prueba en Google Cloud.'
+    );
+  }
+
+  if (code === 'access_denied' || combined.includes('access_denied')) {
+    return new Error(
+      'Acceso denegado por Google. Si la app está en modo de pruebas, verifica que tu correo esté autorizado; si no, acepta los permisos solicitados.'
+    );
+  }
+
+  if (
+    code === 'invalid_client' ||
+    code === 'unauthorized_client' ||
+    code === 'origin_mismatch' ||
+    code === 'redirect_uri_mismatch' ||
+    combined.includes('invalid_client') ||
+    combined.includes('origin')
+  ) {
+    console.error('[Luma Auth] Error de configuración OAuth en Google Cloud:', {
+      code: codeOrType,
+      description,
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+    });
+    return new Error(UNAVAILABLE_LOGIN_MESSAGE);
+  }
+
+  console.error('[Luma Auth] Error inesperado de Google Identity Services:', {
+    code: codeOrType,
+    description,
+  });
+  return new Error(
+    description || 'No se pudo completar el inicio de sesión con Google. Inténtalo de nuevo.'
+  );
 }
 
-function scheduleSilentRefresh(creds: DriveCredentials, expiresInSec: number) {
+function scheduleSilentRefresh(expiresInSec: number) {
   if (refreshTimerId) {
     window.clearTimeout(refreshTimerId);
     refreshTimerId = null;
@@ -133,7 +229,7 @@ function scheduleSilentRefresh(creds: DriveCredentials, expiresInSec: number) {
   const delayMs = Math.max(60_000, (expiresInSec - 240) * 1000);
   refreshTimerId = window.setTimeout(() => {
     if (!inMemoryAccessToken || !navigator.onLine) return;
-    signInWithGoogleDrive(creds, { silent: true }).catch(() => {
+    signInWithGoogleDrive({ silent: true }).catch(() => {
       // If silent refresh fails, user will be prompted clearly on next Drive call
       inMemoryAccessToken = null;
       inMemoryTokenExpiresAt = 0;
@@ -156,61 +252,64 @@ async function fetchGoogleUserInfo(token: string): Promise<void> {
 }
 
 export async function signInWithGoogleDrive(
-  creds: DriveCredentials,
   options?: { silent?: boolean }
 ): Promise<DriveAuthState> {
-  if (!navigator.onLine) {
-    throw new Error('Sin conexión a internet para iniciar sesión con Google.');
-  }
-  const cleanClientId = creds.clientId.trim();
-  if (!cleanClientId) {
-    throw new Error('Primero introduce tu Client ID de Google OAuth en Ajustes → Fuentes.');
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('Sin conexión a internet. Revisa tu red e inténtalo de nuevo.');
   }
 
-  // Wait up to 3s for GIS script to load
-  let waited = 0;
-  while (!window.google?.accounts?.oauth2 && waited < 3000) {
-    await new Promise((r) => window.setTimeout(r, 120));
-    waited += 120;
+  const clientId = LUMA_CORE_CONFIG.publicGoogleClientId.trim();
+  if (!clientId) {
+    console.error(
+      '[Luma Auth] Falta la variable de entorno import.meta.env.VITE_GOOGLE_CLIENT_ID. Configúrala para habilitar el inicio de sesión con Google.'
+    );
+    throw new Error(UNAVAILABLE_LOGIN_MESSAGE);
   }
+
+  await loadGoogleGsiScript();
+
   const oauth2 = window.google?.accounts?.oauth2;
   if (!oauth2) {
+    console.error('[Luma Auth] window.google.accounts.oauth2 no está disponible después de cargar gsi/client.');
     throw new Error(
-      'No se pudo cargar Google Identity Services. Verifica tu conexión o bloqueadores de scripts.'
+      'No se pudo inicializar el servicio de Google. Verifica tu conexión o bloqueadores de scripts.'
     );
   }
-
-  inMemoryCreds = { ...creds, clientId: cleanClientId };
 
   return new Promise<DriveAuthState>((resolve, reject) => {
     try {
       const client = oauth2.initTokenClient({
-        client_id: cleanClientId,
-        scope: buildScopes(creds.scopeMode),
+        client_id: clientId,
+        scope: GOOGLE_OAUTH_SCOPES,
         callback: async (resp) => {
           if (resp.error || !resp.access_token) {
-            reject(new Error(resp.error_description || resp.error || 'access_denied'));
+            reject(mapGisCallbackError(resp.error || 'access_denied', resp.error_description));
             return;
           }
           const expiresIn = resp.expires_in ?? 3500;
           inMemoryAccessToken = resp.access_token;
           inMemoryTokenExpiresAt = Date.now() + expiresIn * 1000;
           await fetchGoogleUserInfo(resp.access_token);
-          scheduleSilentRefresh(inMemoryCreds!, expiresIn);
+          scheduleSilentRefresh(expiresIn);
           emitAuthState();
           resolve(getDriveAuthState());
         },
         error_callback: (err) => {
-          reject(new Error(err.message || err.type || 'popup_closed'));
+          reject(mapGisCallbackError(err.type || 'popup_closed', err.message));
         },
       });
 
       client.requestAccessToken({
-        prompt: options?.silent ? '' : inMemoryAccessToken ? '' : 'consent',
-        hint: inMemoryUser.email,
+        prompt: options?.silent ? '' : 'select_account consent',
+        ...(options?.silent && inMemoryUser.email ? { hint: inMemoryUser.email } : {}),
       });
     } catch (err) {
-      reject(err);
+      console.error('[Luma Auth] Excepción al iniciar TokenClient:', err);
+      reject(
+        err instanceof Error
+          ? err
+          : new Error('No se pudo abrir el inicio de sesión de Google.')
+      );
     }
   });
 }

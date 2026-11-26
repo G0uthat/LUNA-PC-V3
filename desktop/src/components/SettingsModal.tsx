@@ -11,12 +11,9 @@ import {
   Gauge,
   HardDrive,
   Heart,
-  HelpCircle,
   Info,
-  KeyRound,
   Keyboard,
   Languages,
-  Lock,
   LogOut,
   Monitor,
   Moon,
@@ -45,12 +42,11 @@ import { LumaBrandLogo } from './LumaBrandLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
   DriveAuthState,
-  DriveCredentials,
-  DriveScopeMode,
   DriveSource,
   StorageQuotaInfo,
 } from '../drive/driveTypes';
 import { formatBytes } from '../drive/driveCache';
+import { GoogleSignInAction } from '../core';
 
 export type SettingsTabId =
   | 'appearance'
@@ -67,15 +63,13 @@ interface SettingsModalProps {
   prefs: WorkspacePreferences;
   viewport: ViewportProfile;
   driveAuth: DriveAuthState;
-  driveCredentials: DriveCredentials;
   driveSources: DriveSource[];
   storageQuota: StorageQuotaInfo | null;
   pendingSyncCount: number;
   onClose: () => void;
   onUpdatePrefs: (patch: Partial<WorkspacePreferences>) => void;
   onExportBackup: () => void;
-  onSaveDriveCredentials: (creds: DriveCredentials) => Promise<{ encrypted: boolean }>;
-  onSignInDrive: (creds: DriveCredentials) => Promise<void>;
+  onSignInDrive: () => Promise<void>;
   onSignOutDrive: () => void;
   onAddDriveSourceByLink: (link: string, name: string, color: string) => Promise<void>;
   onPickDriveFolder: () => Promise<void>;
@@ -83,7 +77,6 @@ interface SettingsModalProps {
   onSetDefaultDriveSource: (id: string) => void;
   onDeleteDriveSource: (id: string) => void;
   onFreeLocalCache: () => Promise<void>;
-  onOpenClientIdGuide: () => void;
 }
 
 const FONT_OPTIONS: Array<{ id: ReaderFontId; label: string; sample: string; css: string }> = [
@@ -123,14 +116,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   prefs,
   viewport,
   driveAuth,
-  driveCredentials,
   driveSources,
   storageQuota,
   pendingSyncCount,
   onClose,
   onUpdatePrefs,
   onExportBackup,
-  onSaveDriveCredentials,
   onSignInDrive,
   onSignOutDrive,
   onAddDriveSourceByLink,
@@ -139,7 +130,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSetDefaultDriveSource,
   onDeleteDriveSource,
   onFreeLocalCache,
-  onOpenClientIdGuide,
 }) => {
   const [tab, setTab] = useState<SettingsTabId>(initialTab);
   const [newSourceName, setNewSourceName] = useState('');
@@ -149,10 +139,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [updateMessage, setUpdateMessage] = useState('Luma está al día (v1.0).');
   const [showLicenses, setShowLicenses] = useState(false);
 
-  // Google Drive BYO credentials & folder form
-  const [clientIdInput, setClientIdInput] = useState(driveCredentials.clientId);
-  const [apiKeyInput, setApiKeyInput] = useState(driveCredentials.apiKey ?? '');
-  const [scopeMode, setScopeMode] = useState<DriveScopeMode>(driveCredentials.scopeMode);
   const [driveStatusMsg, setDriveStatusMsg] = useState<string | null>(null);
   const [driveErrorMsg, setDriveErrorMsg] = useState<string | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -162,12 +148,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   React.useEffect(() => {
     if (open) {
       setTab(initialTab);
-      setClientIdInput(driveCredentials.clientId);
-      setApiKeyInput(driveCredentials.apiKey ?? '');
-      setScopeMode(driveCredentials.scopeMode);
       setDriveErrorMsg(null);
     }
-  }, [open, initialTab, driveCredentials]);
+  }, [open, initialTab]);
 
   if (!open) return null;
 
@@ -542,174 +525,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* TAB 2: FUENTES (GOOGLE DRIVE v3 ZERO-BACKEND) */}
             {tab === 'sources' && (
               <div className="space-y-5">
-                {/* Credentials Card */}
+                {/* Google Drive Connection Card */}
                 <section className="p-4 rounded-2xl border border-[var(--luma-border)] bg-[var(--luma-bg)] space-y-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <KeyRound className="w-4 h-4 text-[var(--luma-accent)]" />
-                      <div>
-                        <div className="text-sm font-bold">Conexión directa con tu Google Drive</div>
-                        <div className="text-[11px] text-[var(--luma-ink-muted)]">
-                          Sin servidores de terceros · Credenciales cifradas localmente con AES-GCM
-                        </div>
+                  <div className="flex items-center gap-2.5">
+                    <Cloud className="w-4 h-4 text-[var(--luma-accent)] shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">Conexión directa con tu Google Drive</div>
+                      <div className="text-[11px] text-[var(--luma-ink-muted)]">
+                        Sincronización directa desde tu navegador, sin servidores propios
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onOpenClientIdGuide}
-                      className="h-8 px-3 rounded-lg bg-[var(--luma-accent-soft)] text-[var(--luma-accent)] text-xs font-semibold inline-flex items-center gap-1.5"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      <span>¿Cómo obtengo mi Client ID?</span>
-                    </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[var(--luma-ink-muted)] mb-1">
-                        Client ID de Google OAuth (Aplicación web)
-                      </label>
-                      <input
-                        type="text"
-                        value={clientIdInput}
-                        onChange={(e) => setClientIdInput(e.target.value)}
-                        placeholder="xxxxxxxxxxxx-yyyyyyyyyyyy.apps.googleusercontent.com"
-                        className="w-full h-10 px-3 rounded-xl border border-[var(--luma-border)] bg-[var(--luma-surface)] font-mono text-xs outline-none focus:border-[var(--luma-accent)]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[var(--luma-ink-muted)] mb-1">
-                        API Key de Google (opcional — solo para Google Picker visual)
-                      </label>
-                      <input
-                        type="password"
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="AIzaSy... (opcional)"
-                        className="w-full h-10 px-3 rounded-xl border border-[var(--luma-border)] bg-[var(--luma-surface)] font-mono text-xs outline-none focus:border-[var(--luma-accent)]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Scope Selection with Clear Permission Explanation */}
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-semibold text-[var(--luma-ink-muted)]">
-                      Alcance de permiso solicitado a Google
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {(
-                        [
-                          {
-                            id: 'drive',
-                            title: 'Leer carpetas por enlace (drive)',
-                            desc: 'Necesario para abrir cualquier carpeta pegando su link y sincronizar sus subcarpetas.',
-                          },
-                          {
-                            id: 'drive.file',
-                            title: 'Alcance mínimo (drive.file)',
-                            desc: 'Solo accede a archivos creados por Luma o elegidos con Google Picker.',
-                          },
-                        ] as const
-                      ).map((opt) => {
-                        const active = scopeMode === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setScopeMode(opt.id)}
-                            className={`p-3 rounded-xl border text-left transition-colors ${
-                              active
-                                ? 'border-[var(--luma-accent)] bg-[var(--luma-accent-soft)]/70'
-                                : 'border-[var(--luma-border)] bg-[var(--luma-surface)] hover:bg-[var(--luma-surface-alt)]'
-                            }`}
-                          >
-                            <div className="text-xs font-bold">{opt.title}</div>
-                            <div className="text-[11px] text-[var(--luma-ink-muted)] mt-0.5 leading-snug">
-                              {opt.desc}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Save + Official Google Sign-In / Sign-Out Buttons */}
-                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                    <button
-                      type="button"
-                      disabled={driveBusy}
-                      onClick={async () => {
+                  {!driveAuth.connected ? (
+                    <GoogleSignInAction
+                      label="Iniciar sesión con Google"
+                      onSignInGoogle={async () => {
                         setDriveErrorMsg(null);
                         setDriveStatusMsg(null);
-                        const res = await onSaveDriveCredentials({
-                          clientId: clientIdInput.trim(),
-                          apiKey: apiKeyInput.trim(),
-                          scopeMode,
-                        });
-                        setDriveStatusMsg(
-                          res.encrypted
-                            ? 'Credenciales guardadas y cifradas con Web Crypto (AES-GCM).'
-                            : 'Credenciales guardadas localmente en este dispositivo.'
-                        );
+                        await onSignInDrive();
+                        setDriveStatusMsg('Sesión iniciada correctamente con Google Drive.');
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-[var(--luma-border)] bg-[var(--luma-surface)] hover:bg-[var(--luma-surface-alt)] text-xs font-semibold inline-flex items-center gap-1.5"
-                    >
-                      <Lock className="w-3.5 h-3.5 text-[var(--luma-accent)]" />
-                      <span>Guardar credenciales</span>
-                    </button>
-
-                    {!driveAuth.connected ? (
+                      showDriveNote
+                      compact
+                    />
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        Conectado: {driveAuth.email || driveAuth.name || 'Google Drive'}
+                      </span>
                       <button
                         type="button"
-                        disabled={driveBusy}
-                        onClick={async () => {
-                          setDriveBusy(true);
-                          setDriveErrorMsg(null);
-                          setDriveStatusMsg(null);
-                          try {
-                            const creds: DriveCredentials = {
-                              clientId: clientIdInput.trim(),
-                              apiKey: apiKeyInput.trim(),
-                              scopeMode,
-                            };
-                            await onSaveDriveCredentials(creds);
-                            await onSignInDrive(creds);
-                            setDriveStatusMsg('Sesión iniciada correctamente con Google Drive.');
-                          } catch (err) {
-                            setDriveErrorMsg(
-                              err instanceof Error ? err.message : 'No se pudo iniciar sesión.'
-                            );
-                          } finally {
-                            setDriveBusy(false);
-                          }
-                        }}
-                        className="h-10 px-4 rounded-xl bg-white text-[#1F1F1F] border border-[#747775] hover:bg-neutral-50 text-xs font-semibold inline-flex items-center gap-2 shadow-xs disabled:opacity-50"
+                        onClick={onSignOutDrive}
+                        className="h-9 px-3 rounded-xl border border-red-500/35 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-semibold inline-flex items-center gap-1.5"
                       >
-                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                          <path fill="#4285F4" d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" />
-                          <path fill="#34A853" d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z" />
-                          <path fill="#FBBC05" d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z" />
-                          <path fill="#EA4335" d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z" />
-                        </svg>
-                        <span>{driveBusy ? 'Conectando...' : 'Iniciar sesión con Google'}</span>
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Cerrar sesión / Desconectar</span>
                       </button>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          Conectado: {driveAuth.email || driveAuth.name || 'Google Drive'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={onSignOutDrive}
-                          className="h-9 px-3 rounded-xl border border-red-500/35 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-semibold inline-flex items-center gap-1.5"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Cerrar sesión / Desconectar</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {driveStatusMsg && (
                     <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -1402,7 +1256,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <strong>Tokens solo en memoria:</strong> tu token temporal de acceso OAuth vive exclusivamente en memoria RAM mientras la pestaña está abierta y jamás se guarda en <code>localStorage</code> ni en servidores externos.
                     </li>
                     <li>
-                      <strong>Credenciales cifradas localmente:</strong> tu Client ID (y API Key opcional) se cifran en tu dispositivo usando <strong>Web Crypto API (AES-GCM 256-bit)</strong> con una clave no extraíble en IndexedDB.
+                      <strong>Acceso mínimo y seguro:</strong> Luma solo solicita acceso a los archivos creados o elegidos con la app y a su carpeta de configuración privada en Drive (<code>drive.file</code> y <code>drive.appdata</code>).
                     </li>
                     <li>
                       <strong>Sin analítica ni rastreo:</strong> Luma no recolecta telemetría, no lee archivos fuera de las carpetas que elijas y nunca elimina nada en Google Drive sin doble confirmación explícita.

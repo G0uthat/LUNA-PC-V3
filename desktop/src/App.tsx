@@ -27,7 +27,6 @@ import { AccountFriendsModal, AccountTabId } from './components/AccountFriendsMo
 import { CreateActionModal, NotebookTemplateId } from './components/CreateActionModal';
 import { GuideModal } from './components/GuideModal';
 import {
-  ClientIdGuideModal,
   ContextMenuTarget,
   DownloadConfirmModal,
   DriveContextMenu,
@@ -45,17 +44,12 @@ import {
 import {
   DownloadProgressState,
   DriveAuthState,
-  DriveCredentials,
   DriveFileItem,
   DriveSource,
   StorageQuotaInfo,
   SyncConflict,
   SyncQueueJob,
 } from './drive/driveTypes';
-import {
-  loadEncryptedCredentials,
-  saveEncryptedCredentials,
-} from './drive/cryptoVault';
 import {
   clearAllCachedDriveFiles,
   deleteCachedDriveFile,
@@ -104,12 +98,6 @@ import {
 } from './core';
 
 const STORAGE_KEY = 'luma_desktop_workspace_v1';
-
-const DEFAULT_DRIVE_CREDS: DriveCredentials = {
-  clientId: '',
-  apiKey: '',
-  scopeMode: 'drive',
-};
 
 function sanitizeDriveFileName(title: string, ext: string): string {
   const cleaned = title
@@ -189,7 +177,6 @@ export default function App() {
   );
 
   // Google Drive v3 & Sync Engine state
-  const [driveCredentials, setDriveCredentials] = useState<DriveCredentials>(DEFAULT_DRIVE_CREDS);
   const [driveAuth, setDriveAuth] = useState<DriveAuthState>(() => getDriveAuthState());
   const [driveSources, setDriveSources] = useState<DriveSource[]>(() => loadDriveSources());
   const [filesBySource, setFilesBySource] = useState<Record<string, DriveFileItem[]>>({});
@@ -206,7 +193,6 @@ export default function App() {
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgressState | null>(null);
   const [contextTarget, setContextTarget] = useState<ContextMenuTarget | null>(null);
   const [activeConflict, setActiveConflict] = useState<SyncConflict | null>(null);
-  const [clientIdGuideOpen, setClientIdGuideOpen] = useState(false);
   const [pendingSaveDest, setPendingSaveDest] = useState<
     | { kind: 'notebook'; notebook: LumaNotebook }
     | { kind: 'files'; files: Array<{ doc: LumaDocument; rawFile?: File }> }
@@ -282,14 +268,9 @@ export default function App() {
     };
   }, []);
 
-  // Hydrate encrypted Drive credentials, offline sync queue, quota & auth subscription
+  // Hydrate offline sync queue, quota & auth subscription
   useEffect(() => {
     const unsub = subscribeDriveAuth(setDriveAuth);
-    loadEncryptedCredentials()
-      .then((creds) => {
-        if (creds) setDriveCredentials(creds);
-      })
-      .catch(() => undefined);
     loadSyncQueue()
       .then(setSyncQueue)
       .catch(() => undefined);
@@ -675,35 +656,15 @@ export default function App() {
     }
   }, [refreshSource]);
 
-  const handleSaveDriveCredentials = useCallback(
-    async (creds: DriveCredentials) => {
-      const res = await saveEncryptedCredentials(creds);
-      setDriveCredentials(creds);
-      showToast(
-        res.encrypted
-          ? 'Credenciales guardadas y cifradas localmente (AES-GCM).'
-          : 'Credenciales guardadas localmente.',
-        'success'
-      );
-      return res;
-    },
-    [showToast]
-  );
-
-  const handleSignInDrive = useCallback(
-    async (creds: DriveCredentials) => {
-      await saveEncryptedCredentials(creds);
-      setDriveCredentials(creds);
-      const auth = await signInWithGoogleDrive(creds);
-      setDriveAuth(auth);
-      showToast(`Conectado a Google Drive (${auth.email || 'cuenta activa'}).`, 'success');
-      // Immediately fetch active Drive folders
-      window.setTimeout(() => {
-        void refreshAllSources();
-      }, 150);
-    },
-    [refreshAllSources, showToast]
-  );
+  const handleSignInDrive = useCallback(async () => {
+    const auth = await signInWithGoogleDrive();
+    setDriveAuth(auth);
+    showToast(`Conectado a Google Drive (${auth.email || 'cuenta activa'}).`, 'success');
+    // Immediately fetch active Drive folders
+    window.setTimeout(() => {
+      void refreshAllSources();
+    }, 150);
+  }, [refreshAllSources, showToast]);
 
   const handleSignOutDrive = useCallback(() => {
     signOutGoogleDrive();
@@ -714,16 +675,9 @@ export default function App() {
     showToast('Sesión cerrada. Tus archivos locales siguen disponibles sin conexión.', 'info');
   }, [showToast]);
 
-  const handleCoreSignInGoogle = useCallback(
-    async (clientId: string) => {
-      const creds: DriveCredentials = {
-        ...driveCredentials,
-        clientId: clientId.trim(),
-      };
-      await handleSignInDrive(creds);
-    },
-    [driveCredentials, handleSignInDrive]
-  );
+  const handleCoreSignInGoogle = useCallback(async () => {
+    await handleSignInDrive();
+  }, [handleSignInDrive]);
 
   const handleWipeLocalAndDisconnect = useCallback(async () => {
     signOutGoogleDrive();
@@ -783,7 +737,7 @@ export default function App() {
 
   const handlePickDriveFolder = useCallback(async () => {
     try {
-      const picked = await pickDriveFolderWithGooglePicker(driveCredentials.apiKey);
+      const picked = await pickDriveFolderWithGooglePicker();
       if (!picked) return;
       await handleAddDriveSourceByLink(
         `https://drive.google.com/drive/folders/${picked.id}`,
@@ -793,7 +747,7 @@ export default function App() {
     } catch (err) {
       showToast(translateDriveError(err), 'error');
     }
-  }, [driveCredentials.apiKey, handleAddDriveSourceByLink, showToast]);
+  }, [handleAddDriveSourceByLink, showToast]);
 
   const handleToggleDriveSourceActive = useCallback((sourceId: string) => {
     setDriveSources((prev) =>
@@ -2020,6 +1974,7 @@ export default function App() {
                   onSetDefaultSource={handleSetDefaultDriveSource}
                   onDeleteSource={handleDeleteDriveSource}
                   onOpenDriveSettings={() => openSettings('sources')}
+                  onSignInGoogle={handleCoreSignInGoogle}
                 />
               </div>
             ) : (
@@ -2203,14 +2158,12 @@ export default function App() {
         prefs={workspace.prefs}
         viewport={viewport}
         driveAuth={driveAuth}
-        driveCredentials={driveCredentials}
         driveSources={driveSources}
         storageQuota={storageQuota}
         pendingSyncCount={syncQueue.length}
         onClose={() => setSettingsOpen(false)}
         onUpdatePrefs={updatePrefs}
         onExportBackup={handleExportBackup}
-        onSaveDriveCredentials={handleSaveDriveCredentials}
         onSignInDrive={handleSignInDrive}
         onSignOutDrive={handleSignOutDrive}
         onAddDriveSourceByLink={handleAddDriveSourceByLink}
@@ -2219,7 +2172,6 @@ export default function App() {
         onSetDefaultDriveSource={handleSetDefaultDriveSource}
         onDeleteDriveSource={handleDeleteDriveSource}
         onFreeLocalCache={handleFreeLocalCache}
-        onOpenClientIdGuide={() => setClientIdGuideOpen(true)}
       />
 
       {/* Perfil de Usuario, Cuenta Multiplataforma y Amigos */}
@@ -2236,14 +2188,12 @@ export default function App() {
         cloudAccountSection={
           <MyAccountView
             session={authSession}
-            initialClientId={driveCredentials.clientId}
             onSignInGoogle={handleCoreSignInGoogle}
             onSignOut={handleSignOutDrive}
             onWipeLocalAndDisconnect={handleWipeLocalAndDisconnect}
             onUpdateDisplayName={updateAccountDisplayName}
             onRenameDevice={renameConnectedDevice}
             onRemoveDevice={removeConnectedDevice}
-            onOpenClientIdGuide={() => setClientIdGuideOpen(true)}
           />
         }
       />
@@ -2458,15 +2408,10 @@ export default function App() {
       {/* Pantalla de Bienvenida (solo en el primer arranque) */}
       {hydrated && !authSession.welcomeCompleted && (
         <WelcomeScreen
-          initialClientId={driveCredentials.clientId}
           onSignInGoogle={handleCoreSignInGoogle}
           onSkipOffline={completeWelcomeWithSkip}
-          onOpenClientIdGuide={() => setClientIdGuideOpen(true)}
         />
       )}
-
-      {/* Step-by-Step Client ID Visual Guide Modal */}
-      <ClientIdGuideModal open={clientIdGuideOpen} onClose={() => setClientIdGuideOpen(false)} />
 
       {/* Live FPS Counter Badge */}
       {workspace.prefs.showFpsCounter && (

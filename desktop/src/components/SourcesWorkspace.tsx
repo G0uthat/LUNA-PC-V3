@@ -22,6 +22,7 @@ import { DriveAuthState, DriveFileCategory, DriveFileItem, DriveSource } from '.
 import { formatBytes } from '../drive/driveCache';
 import { getOrRenderDriveThumbnail } from '../drive/pdfThumbnailer';
 import { ViewportProfile } from '../hooks/useViewportProfile';
+import { GoogleSignInAction } from '../core';
 
 interface SourcesWorkspaceProps {
   viewport: ViewportProfile;
@@ -44,6 +45,7 @@ interface SourcesWorkspaceProps {
   onSetDefaultSource: (sourceId: string) => void;
   onDeleteSource: (sourceId: string) => void;
   onOpenDriveSettings: () => void;
+  onSignInGoogle: () => Promise<void>;
 }
 
 const SOURCE_COLORS = ['#2B64F5', '#C2642B', '#257A5E', '#7C3AED', '#E11D48', '#D97706'];
@@ -140,6 +142,7 @@ export const SourcesWorkspace: React.FC<SourcesWorkspaceProps> = ({
   onSetDefaultSource,
   onDeleteSource,
   onOpenDriveSettings,
+  onSignInGoogle,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | DriveFileCategory>('all');
@@ -289,23 +292,23 @@ export const SourcesWorkspace: React.FC<SourcesWorkspaceProps> = ({
 
         {/* Not Connected Callout */}
         {!auth.connected && (
-          <div className="p-5 rounded-2xl border border-[var(--luma-accent)]/40 bg-[var(--luma-surface)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="p-5 rounded-2xl border border-[var(--luma-accent)]/40 bg-[var(--luma-surface)] space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-bold flex items-center gap-2">
                 <Cloud className="w-4 h-4 text-[var(--luma-accent)]" />
-                <span>Conecta tu propio Google Drive</span>
+                <span>Conecta tu cuenta de Google Drive</span>
               </div>
               <p className="text-xs text-[var(--luma-ink-muted)] max-w-xl leading-relaxed">
-                Configura tu Client ID de Google OAuth en Ajustes → Fuentes para leer carpetas completas, descargar libros con pausa/reanudación y sincronizar tus cuadernos Luma entre dispositivos.
+                Inicia sesión con tu cuenta de Google para leer carpetas vinculadas, descargar libros con pausa/reanudación y sincronizar tus cuadernos Luma entre dispositivos.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onOpenDriveSettings}
-              className="h-11 px-4 rounded-xl bg-[var(--luma-accent)] text-[var(--luma-on-accent)] text-xs font-semibold whitespace-nowrap shrink-0"
-            >
-              Configurar conexión
-            </button>
+            <GoogleSignInAction
+              label="Iniciar sesión con Google"
+              onSignInGoogle={onSignInGoogle}
+              showDriveNote
+              compact
+              fullWidth={false}
+            />
           </div>
         )}
 

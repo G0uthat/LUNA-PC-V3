@@ -2,6 +2,9 @@
   "name": "luma-workspace",
   "private": true,
   "version": "1.0.0",
+  "workspaces": [
+    "desktop"
+  ],
   "scripts": {
     "dev": "npm --prefix desktop run dev:web",
     "build": "npm --prefix desktop run build",

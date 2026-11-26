@@ -4,30 +4,26 @@ import {
   Check,
   Cloud,
   ExternalLink,
-  HelpCircle,
   Laptop,
-  Loader2,
   LogOut,
   Monitor,
   Pencil,
-  ShieldCheck,
   Smartphone,
   Sparkles,
   Trash2,
 } from 'lucide-react';
 import { AuthSessionState, DeviceRecord } from '../types';
 import { LUMA_CORE_CONFIG } from '../config';
+import { GoogleSignInAction } from './GoogleSignInAction';
 
 interface MyAccountViewProps {
   session: AuthSessionState;
-  initialClientId?: string;
-  onSignInGoogle: (clientId: string) => Promise<void>;
+  onSignInGoogle: () => Promise<void>;
   onSignOut: () => void;
   onWipeLocalAndDisconnect: () => Promise<void>;
   onUpdateDisplayName: (name: string) => void;
   onRenameDevice: (deviceId: string, name: string) => void;
   onRemoveDevice: (deviceId: string) => void;
-  onOpenClientIdGuide?: () => void;
 }
 
 function renderPlatformIcon(platform: DeviceRecord['platform']) {
@@ -43,27 +39,18 @@ function renderPlatformIcon(platform: DeviceRecord['platform']) {
 /**
  * Vista "Mi cuenta" compartida por Luma PC y Móvil.
  * Soporta los dos estados completos:
- * 1) SIN SESIÓN: tarjeta explicativa + botón "Iniciar sesión con Google" (reutiliza pantalla de consentimiento).
+ * 1) SIN SESIÓN: tarjeta explicativa + botón directo "Iniciar sesión con Google".
  * 2) CON SESIÓN: foto, nombre editable, correo, insignia Beta, hasta 5 dispositivos, cerrar sesión y borrado total opcional.
  */
 export const MyAccountView: React.FC<MyAccountViewProps> = ({
   session,
-  initialClientId = '',
   onSignInGoogle,
   onSignOut,
   onWipeLocalAndDisconnect,
   onUpdateDisplayName,
   onRenameDevice,
   onRemoveDevice,
-  onOpenClientIdGuide,
 }) => {
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [clientId, setClientId] = useState(
-    initialClientId.trim() || LUMA_CORE_CONFIG.publicGoogleClientId
-  );
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-
   const [nameDraft, setNameDraft] = useState(session.user?.displayName ?? '');
   const [nameSaved, setNameSaved] = useState(false);
 
@@ -75,26 +62,6 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
   React.useEffect(() => {
     setNameDraft(session.user?.displayName ?? '');
   }, [session.user?.displayName]);
-
-  const handleStartGoogleLogin = async () => {
-    const cleanId = clientId.trim();
-    if (!cleanId) {
-      setAuthError('Introduce tu Client ID de Google OAuth para continuar.');
-      return;
-    }
-    setAuthBusy(true);
-    setAuthError(null);
-    try {
-      await onSignInGoogle(cleanId);
-      setConsentOpen(false);
-    } catch (err) {
-      setAuthError(
-        err instanceof Error ? err.message : 'No se pudo iniciar sesión con Google.'
-      );
-    } finally {
-      setAuthBusy(false);
-    }
-  };
 
   // ESTADO 1: SIN SESIÓN
   if (!session.connected || !session.user) {
@@ -130,100 +97,12 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
             ))}
           </div>
 
-          {!consentOpen ? (
-            <button
-              type="button"
-              onClick={() => {
-                setAuthError(null);
-                setConsentOpen(true);
-              }}
-              className="w-full sm:w-auto h-11 px-5 rounded-xl bg-[var(--luma-accent)] text-[var(--luma-on-accent)] text-xs font-semibold inline-flex items-center justify-center gap-2.5 hover:opacity-95 transition-opacity luma-press"
-            >
-              <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center shrink-0">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    fill="#4285F4"
-                    d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-                  />
-                </svg>
-              </span>
-              <span>Iniciar sesión con Google</span>
-            </button>
-          ) : (
-            /* Misma pantalla explicativa previa antes de abrir OAuth de Google */
-            <div className="p-4 rounded-xl border border-[var(--luma-accent)]/35 bg-[var(--luma-accent-soft)]/45 space-y-3 luma-view-enter">
-              <div className="flex items-center gap-2 text-xs font-bold text-[var(--luma-accent)]">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span>{LUMA_CORE_CONFIG.copy.consentTitle}</span>
-              </div>
-              <p className="text-xs leading-relaxed text-[var(--luma-ink)]">
-                {LUMA_CORE_CONFIG.copy.consentBody}
-              </p>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-[11px] font-semibold text-[var(--luma-ink-muted)]">
-                    Client ID de Google OAuth
-                  </label>
-                  {onOpenClientIdGuide && (
-                    <button
-                      type="button"
-                      onClick={onOpenClientIdGuide}
-                      className="text-[11px] font-semibold text-[var(--luma-accent)] hover:underline inline-flex items-center gap-1"
-                    >
-                      <HelpCircle className="w-3 h-3" />
-                      <span>Guía Client ID</span>
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="xxxxxxxxxxxx-yyyyyyyyyyyy.apps.googleusercontent.com"
-                  className="w-full h-9 px-3 rounded-lg border border-[var(--luma-border)] bg-[var(--luma-surface)] font-mono text-xs outline-none focus:border-[var(--luma-accent)]"
-                />
-              </div>
-
-              {authError && (
-                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[11px] text-red-600 dark:text-red-400">
-                  {authError}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={authBusy}
-                  onClick={() => void handleStartGoogleLogin()}
-                  className="h-9 px-4 rounded-lg bg-[var(--luma-accent)] text-[var(--luma-on-accent)] text-xs font-semibold inline-flex items-center gap-2 disabled:opacity-60"
-                >
-                  {authBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{authBusy ? 'Conectando...' : 'Entendido, continuar'}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={authBusy}
-                  onClick={() => setConsentOpen(false)}
-                  className="h-9 px-3 rounded-lg border border-[var(--luma-border)] bg-[var(--luma-surface)] text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
+          <GoogleSignInAction
+            label="Iniciar sesión con Google"
+            onSignInGoogle={onSignInGoogle}
+            showDriveNote
+            compact
+          />
         </div>
 
         {/* Enlace de comentarios de Beta */}
